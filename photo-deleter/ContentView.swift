@@ -74,22 +74,32 @@ struct ContentView: View {
     ///
     /// - Returns: A gesture that handles the swipe interaction
     var dragGesture: some Gesture {
-        DragGesture()
+        let minimumDistance: CGFloat = 50 // Minimum distance before gesture is recognized
+        
+        return DragGesture()
             .onChanged { value in
-                offset = value.translation.width
+                // Only update offset if drag exceeds minimum distance
+                if abs(value.translation.width) >= minimumDistance {
+                    withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.6)) {
+                        offset = value.translation.width
+                    }
+                }
             }
             .onEnded { value in
                 let width = UIScreen.main.bounds.width
-                if value.translation.width < -width * 0.3 {
-                    moveToDeleteAlbum()
+                
+                // Only process the gesture if minimum distance was reached
+                if abs(value.translation.width) >= minimumDistance {
+                    if value.translation.width < -width * 0.3 {
+                        moveToDeleteAlbum()
+                    }
+                    stats.totalProcessed += 1
+                    loadRandomImage()
                 }
                 
-                // Reset position and load next image
-                withAnimation {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
                     offset = 0
                 }
-                stats.totalProcessed += 1
-                loadRandomImage()
             }
     }
     
@@ -133,20 +143,30 @@ struct ContentView: View {
                     .scaledToFit()
                     .frame(height: 400)
                     .offset(x: offset)
+                    .rotationEffect(.degrees(Double(offset) / 40))  // Very subtle rotation
+                    .scaleEffect(1.0 - abs(Double(offset)) / 4000)  // Very subtle scaling
                     .gesture(dragGesture)
+                    .overlay(
+                        ZStack {
+                            // Delete icon (appears when dragging left)
+                            Image(systemName: "trash.circle.fill")
+                                .font(.system(size: 60))
+                                .foregroundColor(.red)
+                                .opacity(offset < -20 ? -Double(offset) / 200 : 0)
+                                .offset(x: -40)
+                            
+                            // Keep icon (appears when dragging right)
+                            Image(systemName: "heart.circle.fill")
+                                .font(.system(size: 60))
+                                .foregroundColor(.green)
+                                .opacity(offset > 20 ? Double(offset) / 200 : 0)
+                                .offset(x: 40)
+                        }
+                    )
             } else {
                 Text("No photos available")
                     .foregroundColor(.gray)
             }
-            
-            HStack {
-                Text("← Swipe left to delete")
-                    .foregroundColor(.gray)
-                Spacer()
-                Text("Swipe right to keep →")
-                    .foregroundColor(.gray)
-            }
-            .padding()
             
             Text("Processed: \(stats.totalProcessed)")
                 .font(.caption)
