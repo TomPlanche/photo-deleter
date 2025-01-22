@@ -12,6 +12,13 @@ import Photos
 /// Name of the album where photos marked for deletion will be stored
 private let TO_DELETE_ALBUM_NAME = "To Delete"
 
+/// Main view states to control the app flow
+private enum AppState {
+    case welcome
+    case processing
+    case finished
+}
+
 /// A view that provides a Tinder-like interface for managing photos in the user's photo library.
 ///
 /// This view allows users to:
@@ -26,6 +33,7 @@ private let TO_DELETE_ALBUM_NAME = "To Delete"
 /// - Permission status
 /// - Completion status
 struct ContentView: View {
+    @State private var appState: AppState = .welcome
     /// The currently displayed image
     @State private var currentImage: UIImage?
     
@@ -88,39 +96,16 @@ struct ContentView: View {
     var body: some View {
         Group {
             if isPhotoAccessGranted {
-                if isFinished {
+                switch appState {
+                case .welcome:
+                    WelcomeView(startProcessing: {
+                        appState = .processing
+                        loadRandomImage()
+                    })
+                case .processing:
+                    mainProcessingView
+                case .finished:
                     SummaryView(stats: stats)
-                } else {
-                    VStack {
-                        Text("Photo Deleter")
-                            .font(.title)
-                            .padding()
-                        
-                        if let image = currentImage {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(height: 400)
-                                .offset(x: offset)
-                                .gesture(dragGesture)
-                        } else {
-                            Text("No photos available")
-                                .foregroundColor(.gray)
-                        }
-                        
-                        HStack {
-                            Text("← Swipe left to delete")
-                                .foregroundColor(.gray)
-                            Spacer()
-                            Text("Swipe right to keep →")
-                                .foregroundColor(.gray)
-                        }
-                        .padding()
-                        
-                        Text("Processed: \(stats.totalProcessed)")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
                 }
             } else {
                 VStack {
@@ -132,6 +117,40 @@ struct ContentView: View {
         }
         .onAppear {
             requestPhotoAccess()
+        }
+    }
+    
+    /// The main photo processing interface
+    private var mainProcessingView: some View {
+        VStack {
+            Text("Photo Deleter")
+                .font(.title)
+                .padding()
+            
+            if let image = currentImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 400)
+                    .offset(x: offset)
+                    .gesture(dragGesture)
+            } else {
+                Text("No photos available")
+                    .foregroundColor(.gray)
+            }
+            
+            HStack {
+                Text("← Swipe left to delete")
+                    .foregroundColor(.gray)
+                Spacer()
+                Text("Swipe right to keep →")
+                    .foregroundColor(.gray)
+            }
+            .padding()
+            
+            Text("Processed: \(stats.totalProcessed)")
+                .font(.caption)
+                .foregroundColor(.gray)
         }
     }
     
@@ -195,7 +214,7 @@ struct ContentView: View {
         let allPhotos = PHAsset.fetchAssets(with: .image, options: fetchOptions)
         
         guard allPhotos.count > stats.totalProcessed else {
-            isFinished = true
+            appState = .finished
             return
         }
         
@@ -324,22 +343,195 @@ struct SummaryView: View {
     let stats: ContentView.ProcessingStats
     
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Processing Complete!")
-                .font(.title)
-                .padding()
+        VStack(spacing: 40) {
+            // Success Icon and Title
+            VStack(spacing: 15) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 80))
+                    .foregroundColor(.green)
+                
+                Text("All Done!")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                
+                Text("Your photos have been organized")
+                    .font(.title3)
+                    .foregroundColor(.gray)
+            }
             
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Total photos processed: \(stats.totalProcessed)")
-                Text("Photos marked for deletion: \(stats.markedForDeletion)")
-                Text("Photos kept: \(stats.totalProcessed - stats.markedForDeletion)")
+            // Statistics Cards
+            VStack(spacing: 15) {
+                StatCard(
+                    icon: "photo.stack",
+                    title: "Total Processed",
+                    value: stats.totalProcessed,
+                    color: .blue
+                )
+                
+                StatCard(
+                    icon: "trash.circle",
+                    title: "Marked for Deletion",
+                    value: stats.markedForDeletion,
+                    color: .red
+                )
+                
+                StatCard(
+                    icon: "heart.circle",
+                    title: "Photos Kept",
+                    value: stats.totalProcessed - stats.markedForDeletion,
+                    color: .green
+                )
+            }
+            .padding(.horizontal)
+            
+            // Open Album Button
+            Link(destination: URL(string: "photos-redirect://")!) {
+                HStack {
+                    Image(systemName: "photo.stack.fill")
+                    Text("Open Photos App")
+                }
+                .font(.headline)
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.blue)
+                .cornerRadius(10)
+            }
+            .padding(.horizontal)
+            
+            Text("Review your marked photos in the '\(TO_DELETE_ALBUM_NAME)' album")
+                .font(.subheadline)
+                .foregroundColor(.gray)
+                .multilineTextAlignment(.center)
+        }
+        .padding()
+    }
+}
+
+/// A card displaying a statistic with an icon and color
+private struct StatCard: View {
+    let icon: String
+    let title: String
+    let value: Int
+    let color: Color
+    
+    var body: some View {
+        HStack {
+            Image(systemName: icon)
+                .font(.title)
+                .foregroundColor(color)
+                .frame(width: 40)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                
+                Text("\(value)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+            }
+            
+            Spacer()
+        }
+        .padding()
+        .background(color.opacity(0.1))
+        .cornerRadius(12)
+    }
+}
+
+/// A row showing a numbered instruction
+private struct InstructionRow: View {
+    let number: Int
+    let text: String
+    
+    var body: some View {
+        HStack(spacing: 15) {
+            Text("\(number)")
+                .font(.headline)
+                .foregroundColor(.white)
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(Color.blue))
+            
+            Text(text)
+                .font(.body)
+            
+            Spacer()
+        }
+    }
+}
+
+/// Welcome screen that explains the app's functionality
+struct WelcomeView: View {
+    let startProcessing: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 30) {
+            Image(systemName: "photo.stack.fill")
+                .font(.system(size: 60))
+                .foregroundColor(.blue)
+            
+            Text("Welcome to Photo Deleter")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+            
+            VStack(alignment: .leading, spacing: 20) {
+                FeatureRow(
+                    icon: "photo.stack",
+                    title: "Organize Your Photos",
+                    description: "Quickly review your photo library and mark unwanted photos for deletion"
+                )
+                
+                FeatureRow(
+                    icon: "hand.draw",
+                    title: "Simple Gestures",
+                    description: "Swipe left to mark for deletion, right to keep"
+                )
+                
+                FeatureRow(
+                    icon: "folder",
+                    title: "Safe Process",
+                    description: "Photos are moved to a 'To Delete' album for your final review"
+                )
             }
             .padding()
             
-            Text("You can find photos marked for deletion in the 'To Delete' album")
-                .multilineTextAlignment(.center)
-                .padding()
-                .foregroundColor(.gray)
+            Button(action: startProcessing) {
+                Text("Start Organizing")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .cornerRadius(10)
+            }
+            .padding(.horizontal)
+        }
+        .padding()
+    }
+}
+
+/// A row showing a feature with an icon and description
+struct FeatureRow: View {
+    let icon: String
+    let title: String
+    let description: String
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 15) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(.blue)
+                .frame(width: 30)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
