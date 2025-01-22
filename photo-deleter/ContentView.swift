@@ -143,8 +143,8 @@ struct ContentView: View {
                     .scaledToFit()
                     .frame(height: 400)
                     .offset(x: offset)
-                    .rotationEffect(.degrees(Double(offset) / 40))  // Very subtle rotation
-                    .scaleEffect(1.0 - abs(Double(offset)) / 4000)  // Very subtle scaling
+                    .rotationEffect(.degrees(Double(offset) / 40))
+                    .scaleEffect(1.0 - abs(Double(offset)) / 4000)
                     .gesture(dragGesture)
                     .overlay(
                         ZStack {
@@ -168,9 +168,24 @@ struct ContentView: View {
                     .foregroundColor(.gray)
             }
             
-            Text("Processed: \(stats.totalProcessed)")
-                .font(.caption)
-                .foregroundColor(.gray)
+            Spacer()
+            
+            // Modern progress indicator with total
+            HStack(spacing: 8) {
+                Image(systemName: "photo.stack")
+                    .foregroundColor(.blue)
+                Text("\(stats.totalProcessed)/\(totalPhotosCount)")
+                    .fontWeight(.semibold)
+                Text("processed")
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(Color.blue.opacity(0.1))
+            )
+            .padding(.bottom)
         }
     }
     
@@ -348,6 +363,39 @@ struct ContentView: View {
                 print("Error adding asset to album: \(error.localizedDescription)")
             }
         }
+    }
+    
+    /// Computed property to get the total number of photos in the "To Delete" album
+    private var totalPhotosCount: Int {
+        let fetchOptions = PHFetchOptions()
+        if let toDeleteAlbum = findToDeleteAlbum() {
+            let toDeletePhotos = PHAsset.fetchAssets(in: toDeleteAlbum, options: nil)
+            let notInToDelete = "NOT (localIdentifier IN %@)"
+            let identifiers = (0..<toDeletePhotos.count).compactMap { 
+                toDeletePhotos.object(at: $0).localIdentifier 
+            }
+            fetchOptions.predicate = NSPredicate(format: notInToDelete, identifiers)
+        }
+        let allPhotos = PHAsset.fetchAssets(with: .image, options: fetchOptions)
+        return allPhotos.count
+    }
+    
+    /// Helper method to find the "To Delete" album
+    private func findToDeleteAlbum() -> PHAssetCollection? {
+        let albumsFetchResult = PHAssetCollection.fetchAssetCollections(
+            with: .album,
+            subtype: .albumRegular,
+            options: nil
+        )
+        
+        var toDeleteAlbum: PHAssetCollection?
+        albumsFetchResult.enumerateObjects { collection, _, stop in
+            if collection.localizedTitle == TO_DELETE_ALBUM_NAME {
+                toDeleteAlbum = collection
+                stop.pointee = true
+            }
+        }
+        return toDeleteAlbum
     }
 }
 
