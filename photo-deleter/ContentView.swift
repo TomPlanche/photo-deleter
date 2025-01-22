@@ -11,6 +11,7 @@ import Photos
 
 /// Name of the album where photos marked for deletion will be stored
 private let TO_DELETE_ALBUM_NAME = "To Delete"
+private let PROCESSED_PHOTOS_KEY = "ProcessedPhotoIds"
 
 /// Main view states to control the app flow
 private enum AppState {
@@ -52,6 +53,9 @@ struct ContentView: View {
     /// Statistics about the current processing session
     @State private var stats = ProcessingStats()
     
+    /// Set of photo identifiers that have already been processed
+    @State private var processedPhotoIds: Set<String> = Set(UserDefaults.standard.stringArray(forKey: PROCESSED_PHOTOS_KEY) ?? [])
+    
     /// Stores statistics about the photo processing session
     ///
     /// This struct maintains counts of:
@@ -74,30 +78,31 @@ struct ContentView: View {
     ///
     /// - Returns: A gesture that handles the swipe interaction
     var dragGesture: some Gesture {
-        let minimumDistance: CGFloat = 50 // Minimum distance before gesture is recognized
+        let minimumActionDistance: CGFloat = 75 // Minimum distance between action is recognized
+        let response = 0.3
+        let dampingFraction: CGFloat = 0.6
+        
         
         return DragGesture()
             .onChanged { value in
-                // Only update offset if drag exceeds minimum distance
-                if abs(value.translation.width) >= minimumDistance {
-                    withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.6)) {
-                        offset = value.translation.width
-                    }
+                withAnimation(.interactiveSpring(response: response, dampingFraction: dampingFraction)) {
+                    offset = value.translation.width
                 }
+                
             }
             .onEnded { value in
-                let width = UIScreen.main.bounds.width
-                
                 // Only process the gesture if minimum distance was reached
-                if abs(value.translation.width) >= minimumDistance {
-                    if value.translation.width < -width * 0.3 {
+                if abs(value.translation.width) >= minimumActionDistance {
+                    
+                    if (value.translation.width < 0) {
                         moveToDeleteAlbum()
                     }
+                    
                     stats.totalProcessed += 1
                     loadRandomImage()
                 }
                 
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                withAnimation(.spring(response: response, dampingFraction: dampingFraction)) {
                     offset = 0
                 }
             }
@@ -137,6 +142,8 @@ struct ContentView: View {
                 .font(.title)
                 .padding()
             
+            Spacer()
+            
             if let image = currentImage {
                 Image(uiImage: image)
                     .resizable()
@@ -161,6 +168,25 @@ struct ContentView: View {
                                 .foregroundColor(.green)
                                 .opacity(offset > 20 ? Double(offset) / 200 : 0)
                                 .offset(x: 40)
+                            
+                            // Photo counter overlay
+                            VStack {
+                                Spacer()
+                                HStack {
+                                    Spacer()
+                                    Text("Photo \(processedPhotoIds.count)")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(
+                                            Capsule()
+                                                .fill(Color.black.opacity(0.6))
+                                        )
+                                        .padding(8)
+                                }
+                            }
                         }
                     )
             } else {
@@ -202,19 +228,10 @@ struct ContentView: View {
         }
     }
     
-    /// Loads the next unprocessed photo from the photo library
-    ///
-    /// This function:
-    /// - Fetches photos sorted by creation date
-    /// - Excludes photos from the "To Delete" album
-    /// - Loads the photo at the current processing index
-    /// - Updates the UI with the loaded image
-    /// - Sets completion status when all photos are processed
-    ///
-    /// - Note: This function will set isFinished to true when all photos have been processed
-    ///
-    /// - Important: This method requires photo library access to be granted
-    private func loadRandomImage() {
+    /// Loads a random unprocessed photo from the photo library
+    private func loadRandomImage(retryCount: Int = 0) {
+        let maxRetries = 3
+        
         // Find the "To Delete" album
         var toDeleteAlbum: PHAssetCollection?
         
@@ -233,7 +250,6 @@ struct ContentView: View {
         
         // Create fetch options for all photos
         let fetchOptions = PHFetchOptions()
-        fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
         
         // If we found the to-delete album, exclude its photos
         if let toDeleteAlbum = toDeleteAlbum {
@@ -248,29 +264,67 @@ struct ContentView: View {
         // Fetch all photos except those in to-delete album
         let allPhotos = PHAsset.fetchAssets(with: .image, options: fetchOptions)
         
-        guard allPhotos.count > stats.totalProcessed else {
+        // Get all unprocessed photos
+        let unprocessedPhotos = (0..<allPhotos.count).compactMap { index -> PHAsset? in
+            let asset = allPhotos.object(at: index)
+            return processedPhotoIds.contains(asset.localIdentifier) ? nil : asset
+        }
+        
+        guard !unprocessedPhotos.isEmpty else {
             appState = .finished
             return
         }
         
-        // Get next unprocessed photo
-        let asset = allPhotos.object(at: stats.totalProcessed)
-        currentAsset = asset
+        // Get a random unprocessed photo
+        let randomAsset = unprocessedPhotos.randomElement()!
+        currentAsset = randomAsset
+        processedPhotoIds.insert(randomAsset.localIdentifier)
+        
+        // Save to UserDefaults
+        UserDefaults.standard.set(Array(processedPhotoIds), forKey: PROCESSED_PHOTOS_KEY)
         
         // Request image
         let imageManager = PHImageManager.default()
         let requestOptions = PHImageRequestOptions()
         requestOptions.isSynchronous = false
         requestOptions.deliveryMode = .highQualityFormat
+        requestOptions.isNetworkAccessAllowed = true
         
         imageManager.requestImage(
-            for: asset,
+            for: randomAsset,
             targetSize: CGSize(width: 800, height: 800),
             contentMode: .aspectFit,
             options: requestOptions
         ) { image, info in
             DispatchQueue.main.async {
-                self.currentImage = image
+                if let error = info?[PHImageErrorKey] as? Error {
+                    print("Error loading image: \(error.localizedDescription)")
+                    
+                    // If we haven't exceeded max retries, try loading another image
+                    if retryCount < maxRetries {
+                        print("Retrying with different image (attempt \(retryCount + 1)/\(maxRetries))")
+                        self.loadRandomImage(retryCount: retryCount + 1)
+                    } else {
+                        // Skip problematic image after max retries
+                        print("Skipping problematic image after \(maxRetries) attempts")
+                        self.stats.totalProcessed += 1
+                        self.loadRandomImage(retryCount: 0)
+                    }
+                } else if let cancelled = info?[PHImageCancelledKey] as? Bool, cancelled {
+                    print("Image loading was cancelled")
+                    self.loadRandomImage(retryCount: retryCount)
+                } else if let image = image {
+                    self.currentImage = image
+                } else {
+                    // If we get here, we have no error but also no image
+                    print("No image data available")
+                    if retryCount < maxRetries {
+                        self.loadRandomImage(retryCount: retryCount + 1)
+                    } else {
+                        self.stats.totalProcessed += 1
+                        self.loadRandomImage(retryCount: 0)
+                    }
+                }
             }
         }
     }
@@ -314,8 +368,6 @@ struct ContentView: View {
                 PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: TO_DELETE_ALBUM_NAME)
             }) { success, error in
                 if success {
-                    print("SUCCESS: Created 'To Delete' album")
-                    
                     // Fetch the newly created album
                     let collections = PHAssetCollection.fetchAssetCollections(
                         with: .album,
@@ -335,7 +387,6 @@ struct ContentView: View {
                 }
             }
         } else {
-            print("ALREADY EXISTS: 'To Delete' album")
             // Album exists, add the asset to it
             addAssetToAlbum(asset: asset, album: toDeleteAlbum)
         }
@@ -365,7 +416,7 @@ struct ContentView: View {
         }
     }
     
-    /// Computed property to get the total number of photos in the "To Delete" album
+    /// Computed property to get the total number of unprocessed photos
     private var totalPhotosCount: Int {
         let fetchOptions = PHFetchOptions()
         if let toDeleteAlbum = findToDeleteAlbum() {
@@ -377,6 +428,7 @@ struct ContentView: View {
             fetchOptions.predicate = NSPredicate(format: notInToDelete, identifiers)
         }
         let allPhotos = PHAsset.fetchAssets(with: .image, options: fetchOptions)
+        
         return allPhotos.count
     }
     
