@@ -399,6 +399,8 @@
 				DEVELOPMENT_TEAM = 48B9L2P9P6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Photo Deleter needs access to your photo library to help you organize your photos and identify which ones you'd like to delete.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Photo Deleter needs access to your photo library to help you organize your photos and identify which ones you'd like to delete.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -428,6 +430,8 @@
 				DEVELOPMENT_TEAM = 48B9L2P9P6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Photo Deleter needs access to your photo library to help you organize your photos and identify which ones you'd like to delete.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Photo Deleter needs access to your photo library to help you organize your photos and identify which ones you'd like to delete.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
